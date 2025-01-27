@@ -1,9 +1,14 @@
 import json
 import pytest
+import sys
+import os
 from unittest.mock import patch, MagicMock
 import mcp.types as types
-from mcp_server.server import serve
-from mcp.server import Request
+from mcp.types import Request
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from mcp_server_deepseek.server import serve
 
 @pytest.fixture
 def server():
