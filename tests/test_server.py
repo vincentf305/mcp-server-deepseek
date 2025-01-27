@@ -10,9 +10,11 @@ def server():
 
 @pytest.mark.asyncio
 async def test_handle_list_tools(server):
-    tools = await server._list_tools_handler()
-    assert len(tools) == 1
+    # Get the tool registration handlers
+    tools_handler = server.list_tools_handlers[0]
+    tools = await tools_handler()
     
+    assert len(tools) == 1
     chat_tool = tools[0]
     assert chat_tool.name == "chat"
     assert isinstance(chat_tool, types.Tool)
@@ -27,6 +29,8 @@ async def test_handle_list_tools(server):
 
 @pytest.mark.asyncio
 async def test_handle_chat_call(server):
+    # Get the tool call handler
+    tool_handler = server.call_tool_handlers[0]
     test_messages = [{"role": "user", "content": "Hello"}]
     
     with patch('requests.post') as mock_post:
@@ -44,7 +48,7 @@ async def test_handle_chat_call(server):
         }
         mock_post.return_value = mock_response
 
-        result = await server._call_tool_handler("chat", {
+        result = await tool_handler("chat", {
             "messages": test_messages,
             "temperature": 0.7,
             "max_tokens": 500
@@ -66,11 +70,13 @@ async def test_handle_chat_call(server):
 
 @pytest.mark.asyncio
 async def test_handle_chat_call_error(server):
+    tool_handler = server.call_tool_handlers[0]
+    
     with patch('requests.post') as mock_post:
         # Mock API error
         mock_post.side_effect = Exception("API Error")
 
-        result = await server._call_tool_handler("chat", {
+        result = await tool_handler("chat", {
             "messages": [{"role": "user", "content": "Hello"}]
         })
 
@@ -81,7 +87,8 @@ async def test_handle_chat_call_error(server):
 
 @pytest.mark.asyncio
 async def test_handle_unknown_tool(server):
-    result = await server._call_tool_handler("unknown_tool", {})
+    tool_handler = server.call_tool_handlers[0]
+    result = await tool_handler("unknown_tool", {})
     
     assert len(result) == 1
     assert isinstance(result[0], types.TextContent)
@@ -90,7 +97,8 @@ async def test_handle_unknown_tool(server):
 
 @pytest.mark.asyncio
 async def test_handle_missing_arguments(server):
-    result = await server._call_tool_handler("chat", None)
+    tool_handler = server.call_tool_handlers[0]
+    result = await tool_handler("chat", None)
     
     assert len(result) == 1
     assert isinstance(result[0], types.TextContent)
@@ -99,6 +107,8 @@ async def test_handle_missing_arguments(server):
 
 @pytest.mark.asyncio
 async def test_handle_api_error_response(server):
+    tool_handler = server.call_tool_handlers[0]
+    
     with patch('requests.post') as mock_post:
         # Mock API error response
         mock_response = MagicMock()
@@ -106,7 +116,7 @@ async def test_handle_api_error_response(server):
         mock_response.raise_for_status.side_effect = Exception("Bad Request")
         mock_post.return_value = mock_response
 
-        result = await server._call_tool_handler("chat", {
+        result = await tool_handler("chat", {
             "messages": [{"role": "user", "content": "Hello"}]
         })
 
