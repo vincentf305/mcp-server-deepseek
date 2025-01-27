@@ -23,7 +23,7 @@ def serve() -> Server:
     async def handle_list_tools() -> list[types.Tool]:
         return [
             types.Tool(
-                name="chat",
+                name="ask-deepseek",
                 description="Generate responses using the Deepseek model",
                 inputSchema={
                     "type": "object",
@@ -56,7 +56,7 @@ def serve() -> Server:
             if not arguments:
                 raise ValueError("No arguments provided")
 
-            if name == "chat":
+            if name == "ask-deepseek":
                 messages = arguments["messages"]
                 model = arguments.get("model", "deepseek-coder")
                 temperature = arguments.get("temperature", 0.7)
@@ -94,6 +94,8 @@ def serve() -> Server:
         except Exception as e:
             logger.error(f"Tool call failed: {str(e)}")
             return [types.TextContent(type="text", text=f"Error: {str(e)}")]
+        
+    return server
 
 @click.command()
 def main():
