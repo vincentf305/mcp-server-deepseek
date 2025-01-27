@@ -60,20 +60,6 @@ docker run -d \
 python -m mcp_server_deepseek.server
 ```
 
-## Testing
-
-Run the tests using pytest:
-
-```bash
-pytest tests/
-```
-
-For coverage report:
-
-```bash
-pytest --cov=mcp_server tests/
-```
-
 ## Usage with Claude Desktop
 
 1. Ensure you have a Deepseek API key
@@ -102,10 +88,6 @@ pytest --cov=mcp_server tests/
 ```
 
 3. Restart Claude Desktop to load the new configuration
-
-## API
-
-The server implements the MCP protocol and provides the following tool:
 
 ## Contributing
 
