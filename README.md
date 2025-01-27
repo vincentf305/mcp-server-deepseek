@@ -41,7 +41,7 @@ Make sure to replace `your_api_key_here` with your actual Deepseek API key.
 1. Build the Docker image:
 
 ```bash
-docker build -t mcp-server-deepseek .
+docker build -t mcp_server_deepseek .
 ```
 
 2. Run the container:
