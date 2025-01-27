@@ -6,7 +6,8 @@ This repository contains a Model Control Protocol (MCP) server implementation th
 
 - Docker
 - Python 3.11 or later
-- A running Deepseek model container
+- A Deepseek API key
+- Claude Desktop
 
 ## Installation
 
@@ -35,15 +36,14 @@ docker build -t mcp-server-deepseek .
 docker run -d \
   --name mcp-server \
   -p 8765:8765 \
-  --network host \
+  -e DEEPSEEK_API_KEY=your_api_key_here \
   mcp-server-deepseek
 ```
-
-Note: The `--network host` flag is required to allow the MCP server to communicate with the Deepseek model container.
 
 ### Running Locally
 
 ```bash
+export DEEPSEEK_API_KEY=your_api_key_here
 python -m mcp_server.server
 ```
 
@@ -63,50 +63,58 @@ pytest --cov=mcp_server tests/
 
 ## Usage with Claude Desktop
 
-1. Ensure you have the Deepseek model running in a Docker container named `deepseek-coder`
-2. Start the MCP server
-3. Configure Claude Desktop to connect to `ws://localhost:8765`
+1. Ensure you have a Deepseek API key
+2. Create a `.env` file with your API key:
+```bash
+DEEPSEEK_API_KEY=your_api_key_here
+```
+
+3. Add the following to your Claude Desktop configuration (claude_desktop_config.json):
+```json
+{
+  "tools": [
+    {
+      "name": "Deepseek Tools",
+      "type": "mcp",
+      "config": {
+        "command": ["docker", "run", "--rm", "-i", 
+          "-e", "DEEPSEEK_API_KEY=your_api_key_here",
+          "mcp-server-deepseek"
+        ]
+      }
+    }
+  ]
+}
+```
+
+4. Restart Claude Desktop to load the new configuration
 
 ## API
 
-The server implements the MCP protocol over WebSocket. Messages should be in the following format:
+The server implements the MCP protocol and provides the following tool:
 
-### Chat Request
+### Chat Tool
+This tool allows you to interact with Deepseek models for code and text generation.
+
+Parameters:
+- messages (required): Array of message objects with role and content
+- model (optional): "deepseek-coder" or "deepseek-chat" (default: "deepseek-coder")
+- temperature (optional): Controls randomness (0-2, default: 0.7)
+- max_tokens (optional): Maximum tokens to generate (1-4000, default: 500)
+- top_p (optional): Nucleus sampling parameter (0-1, default: 1.0)
+- stream (optional): Enable streaming responses (default: false)
+
+Example Usage:
 ```json
 {
-    "type": "chat",
-    "payload": {
-        "messages": [
-            {
-                "role": "user",
-                "content": "Your message here"
-            }
-        ],
-        "temperature": 0.7
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a Python function to sort a list"
     }
-}
-```
-
-### Chat Response
-```json
-{
-    "type": "chat_response",
-    "payload": {
-        "role": "assistant",
-        "content": "Response from Deepseek model"
-    },
-    "status": "success"
-}
-```
-
-## Error Handling
-
-The server will return error messages in the following format:
-
-```json
-{
-    "type": "error",
-    "message": "Error description"
+  ],
+  "temperature": 0.7,
+  "max_tokens": 500
 }
 ```
 
