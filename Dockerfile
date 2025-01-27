@@ -17,7 +17,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY mcp_server/ mcp_server/
+COPY mcp_server_deepseek/ mcp_server_deepseek/
 
 # Create non-root user
 RUN useradd -m -u 1000 mcp
@@ -31,4 +31,4 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
 # Run the application
-CMD ["python", "-m", "mcp_server.server"]
+CMD ["python", "-m", "mcp_server_deepseek.server"]

@@ -2,7 +2,7 @@ import json
 import pytest
 from unittest.mock import patch, MagicMock
 import mcp.types as types
-from mcp_server.server import serve
+from mcp_server_deepseek.server import serve
 
 @pytest.fixture
 def server():
