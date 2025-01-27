@@ -1,109 +1,123 @@
 import asyncio
+import click
+import json
 import logging
-from typing import List, Optional
-import docker
-import aiohttp
-from mcp import Server, Request, Response, Message, Function, FunctionCall
+import requests
+import sys
 
-logging.basicConfig(level=logging.INFO)
+import mcp
+import mcp.types as types
+
+from mcp.server import Server, NotificationOptions
+from mcp.server.models import InitializationOptions
+
+from .config import settings
+
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-class DeepseekClient:
-    def __init__(self, container_name: str = "deepseek-coder"):
-        self.docker_client = docker.from_env()
-        self.container_name = container_name
-        self._ensure_container_running()
+def serve() -> Server:
+    server = Server("deepseek-server")
 
-    def _ensure_container_running(self):
-        """Ensure the Deepseek container is running."""
-        try:
-            container = self.docker_client.containers.get(self.container_name)
-            if container.status != "running":
-                container.start()
-        except docker.errors.NotFound:
-            logger.error(f"Container {self.container_name} not found")
-            raise
-
-    async def generate_response(self, messages: List[Message], temperature: float = 0.7) -> str:
-        """Generate a response from the Deepseek model."""
-        try:
-            messages_dict = [msg.dict() for msg in messages]
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    "http://localhost:8000/v1/chat/completions",
-                    json={
-                        "messages": messages_dict,
-                        "temperature": temperature,
-                        "model": "deepseek-coder"
-                    }
-                ) as response:
-                    if response.status != 200:
-                        raise Exception(f"Error from Deepseek API: {await response.text()}")
-                    result = await response.json()
-                    return result["choices"][0]["message"]["content"]
-        except Exception as e:
-            logger.error(f"Error generating response: {e}")
-            raise
-
-class DeepseekServer(Server):
-    def __init__(self):
-        super().__init__()
-        self.deepseek_client = DeepseekClient()
-        
-        # Register the chat completion function
-        self.register_function(
-            Function(
+    @server.list_tools()
+    async def handle_list_tools() -> list[types.Tool]:
+        return [
+            types.Tool(
                 name="chat",
-                description="Generate a response using the Deepseek model",
-                parameters={
-                    "temperature": {
-                        "type": "number",
-                        "description": "Controls randomness in the response",
-                        "default": 0.7,
-                        "minimum": 0.0,
-                        "maximum": 2.0
+                description="Generate responses using the Deepseek model",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "messages": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "role": {"type": "string", "enum": ["user", "assistant", "system"]},
+                                    "content": {"type": "string"}
+                                },
+                                "required": ["role", "content"]
+                            }
+                        },
+                        "model": {"type": "string", "default": "deepseek-coder", "enum": ["deepseek-coder", "deepseek-chat"]},
+                        "temperature": {"type": "number", "default": 0.7, "minimum": 0, "maximum": 2},
+                        "max_tokens": {"type": "integer", "default": 500, "minimum": 1, "maximum": 4000},
+                        "top_p": {"type": "number", "default": 1.0, "minimum": 0, "maximum": 1},
+                        "stream": {"type": "boolean", "default": False}
                     },
-                    "max_tokens": {
-                        "type": "integer",
-                        "description": "Maximum number of tokens to generate",
-                        "optional": True
-                    }
+                    "required": ["messages"]
                 }
             )
-        )
+        ]
 
-    async def handle_request(self, request: Request) -> Response:
-        """Handle incoming MCP requests."""
+    @server.call_tool()
+    async def handle_tool_call(name: str, arguments: dict | None) -> list[types.TextContent]:
         try:
-            if request.function == "chat":
-                return await self._handle_chat(request)
-            else:
-                raise ValueError(f"Unknown function: {request.function}")
-        except Exception as e:
-            logger.error(f"Error handling request: {e}")
-            return Response(error=str(e))
+            if not arguments:
+                raise ValueError("No arguments provided")
 
-    async def _handle_chat(self, request: Request) -> Response:
-        """Handle chat completion requests."""
-        try:
-            temperature = request.parameters.get("temperature", 0.7)
-            
-            response_text = await self.deepseek_client.generate_response(
-                request.messages,
-                temperature=temperature
-            )
-            
-            return Response(message=Message(
-                role="assistant",
-                content=response_text
-            ))
-        except Exception as e:
-            logger.error(f"Error in chat completion: {e}")
-            return Response(error=str(e))
+            if name == "chat":
+                messages = arguments["messages"]
+                model = arguments.get("model", "deepseek-coder")
+                temperature = arguments.get("temperature", 0.7)
+                max_tokens = arguments.get("max_tokens", 500)
+                top_p = arguments.get("top_p", 1.0)
+                stream = arguments.get("stream", False)
 
+                deepseek_request = {
+                    "model": model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "top_p": top_p,
+                    "stream": stream
+                }
+
+                json_data = json.dumps(deepseek_request)
+
+                response = requests.post(
+                    f"{settings.deepseek_base_url}/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.deepseek_api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    data=json_data
+                )
+
+                response.raise_for_status()
+                data = response.json()
+                chat_response = data["choices"][0]["message"]["content"]
+                
+                return [types.TextContent(type="text", text=chat_response)]
+
+            raise ValueError(f"Unknown tool: {name}")
+        except Exception as e:
+            logger.error(f"Tool call failed: {str(e)}")
+            return [types.TextContent(type="text", text=f"Error: {str(e)}")]
+
+@click.command()
 def main():
-    server = DeepseekServer()
-    asyncio.run(server.serve("0.0.0.0", 8765))
+    try:
+        async def _run():
+            async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+                server = serve()
+                await server.run(
+                    read_stream, write_stream,
+                    InitializationOptions(
+                        server_name="deepseek-server",
+                        server_version="0.1.0",
+                        capabilities=server.get_capabilities(
+                            notification_options=NotificationOptions(),
+                            experimental_capabilities={}
+                        )
+                    )
+                )
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        logger.info("Server stopped by user")
+    except Exception as e:
+        logger.exception("Server failed")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
